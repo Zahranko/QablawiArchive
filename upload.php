@@ -1,28 +1,12 @@
 <?php
 declare(strict_types=1);
-session_start();
+require_once __DIR__ . '/auth.php';
 
 /* ---------------------------------------------------------------
    upload.php — receives the form, validates, stores, redirects back
    --------------------------------------------------------------- */
 
-const UPLOAD_DIR   = __DIR__ . '/uploads';
-const MAX_BYTES    = 5 * 1024 * 1024;          // 5 MB
-const ALLOWED_EXT  = ['pdf', 'jpg', 'jpeg', 'png'];
-const ALLOWED_MIME = [
-    'pdf'  => ['application/pdf'],
-    'jpg'  => ['image/jpeg'],
-    'jpeg' => ['image/jpeg'],
-    'png'  => ['image/png'],
-];
-
-/** Store a flash message and bounce back to the gallery. */
-function back(string $type, string $message)
-{
-    $_SESSION['flash'] = ['type' => $type, 'message' => $message];
-    header('Location: index.php', true, 303);
-    exit;
-}
+require_login();
 
 /**
  * Turn any user-supplied string into a safe, traversal-proof file stem.
@@ -45,10 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     back('error', 'Invalid request method.');
 }
 
-if (
-    empty($_POST['csrf_token']) || empty($_SESSION['csrf_token']) ||
-    !hash_equals($_SESSION['csrf_token'], (string) $_POST['csrf_token'])
-) {
+if (!csrf_ok()) {
     back('error', 'Security token expired. Please try again.');
 }
 
@@ -79,7 +60,7 @@ if ($file['size'] <= 0) {
     back('error', 'The selected file is empty.');
 }
 if ($file['size'] > MAX_BYTES) {
-    back('error', 'Maximum file size is ' . (MAX_BYTES / 1024 / 1024) . ' MB.');
+    back('error', 'Maximum file size is ' . round(MAX_BYTES / 1048576, 1) . ' MB.');
 }
 
 /* ---------- 4. Extension whitelist ---------- */
@@ -98,7 +79,8 @@ if (!is_uploaded_file($file['tmp_name'])) {
 $finfo = new finfo(FILEINFO_MIME_TYPE);
 $mime  = (string) $finfo->file($file['tmp_name']);
 
-if (!in_array($mime, ALLOWED_MIME[$ext], true)) {
+$allowed = ALLOWED_MIME;
+if (!in_array($mime, $allowed[$ext], true)) {
     back('error', 'The file contents do not match its extension.');
 }
 

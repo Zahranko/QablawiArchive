@@ -1,5 +1,7 @@
-# Nothing in this folder may ever be executed as code.
-# A file that slips past validation is then inert: it can only be served.
+# Two separate jobs in this file. Both matter.
+
+# 1. Nothing in this folder may ever be executed as code, so a file that
+#    slips past validation is inert: it can only be read, never run.
 
 php_flag engine off
 
@@ -7,17 +9,19 @@ php_flag engine off
     php_flag engine off
 </IfModule>
 
-# Strip any handler a server might otherwise attach to these extensions.
-<FilesMatch "\.(php|phps|php3|php4|php5|php7|php8|phtml|pht|cgi|pl|py|sh|htaccess)$">
-    Require all denied
-</FilesMatch>
-
 RemoveHandler .php .phps .phtml .pht .php3 .php4 .php5 .php7 .php8
 RemoveType .php .phps .phtml .pht
 
-# Serve, never run.
+Options -ExecCGI -Indexes
+
+# 2. Nothing in this folder may be fetched directly over HTTP either.
+#    Uploads are private, and the web server would otherwise hand out
+#    uploads/invoice.pdf to anyone who guessed the name, straight past the
+#    login on index.php. file.php checks the session and then streams the
+#    file, and it reads from disk, so this denial does not affect it.
+
+Require all denied
+
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
 </IfModule>
-
-Options -ExecCGI -Indexes

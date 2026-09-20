@@ -3,8 +3,62 @@
 A lightweight PHP file upload and preview gallery, deployed to Hostinger
 straight from GitHub.
 
+- [Signing in](#signing-in) — **change the seeded password**
 - [Deploying from GitHub](#deploying-from-github) — Hostinger pulls from the repo
 - [Manual setup](#1-upload-the-files) — if you'd rather drag files in yourself
+
+---
+
+## Signing in
+
+Every page requires a login. The seeded account is:
+
+| Username | Password |
+|---|---|
+| `qablawi` | `12` |
+
+### Change this before the site holds anything real
+
+Two reasons, both of which apply right now:
+
+1. **`12` is a two-character password.** It falls to the first guess anyone
+   bothers to make. The login throttle in this app slows a browser-based
+   attacker down; it does not stop a script.
+2. **The hash is in a public GitHub repository.** `config.php` is committed, so
+   anyone who finds the repo can read the bcrypt hash and crack `12` locally in
+   well under a second. Even a strong password committed to a public repo is
+   only as private as the repo.
+
+### How to change it
+
+Create `config.local.php` **on the server** — File Manager → `public_html` →
+New File. It is gitignored, so it never reaches GitHub, and it is loaded before
+`config.php`, so whatever it defines wins:
+
+```php
+<?php
+define('USERS', [
+    'qablawi' => '$2y$12$......................',  // your new hash
+]);
+```
+
+To generate the hash, hPanel → **Advanced → SSH Access**, then:
+
+```
+php -r 'echo password_hash("your new password", PASSWORD_DEFAULT), "
+";'
+```
+
+Copy the whole `$2y$...` string, including the `$` signs. If you don't have SSH,
+make a temporary `hash.php` containing that same line as `<?php echo
+password_hash("...", PASSWORD_DEFAULT);`, load it once in the browser, copy the
+result — **then delete the file**.
+
+Add more accounts by adding more entries to the same array.
+
+Making the repository private is worth doing regardless. GitHub → **Settings →
+General → Danger Zone → Change visibility**. If you do, Hostinger's Git
+integration needs the SSH URL and a deploy key — see below.
 
 ---
 
@@ -92,9 +146,16 @@ Put these in your domain's document root (`public_html/`, or a subfolder like
 ```
 public_html/
 ├── .htaccess            <-- blocks /.git and directory listings
-├── index.php
+├── config.php           <-- accounts and limits
+├── auth.php             <-- sessions, login, CSRF
+├── login.php
+├── logout.php
+├── index.php            <-- the gallery
 ├── upload.php
 ├── delete.php
+├── file.php             <-- serves uploads to signed-in users only
+├── assets/
+│   └── app.css
 └── uploads/
     └── .htaccess        <-- do not skip this file
 ```
@@ -109,7 +170,7 @@ paste the contents in.
 If `uploads/` isn't there, create it. Then right-click it → **Permissions**:
 
 - `uploads/` → **755** (`rwxr-xr-x`)
-- `.htaccess`, `index.php`, `upload.php`, `delete.php`, `uploads/.htaccess` → **644**
+- every `.php`, `.css` and `.htaccess` file → **644** (`rw-r--r--`)
 
 755 is enough on Hostinger because PHP runs as your own user. **Do not use 777** —
 it lets any other account on the server write into your folder.
@@ -195,11 +256,34 @@ than silently replacing the existing file.
 is downloadable from the live site. It also disables directory listings and
 denies `README.md` and the dotfiles.
 
+**Authentication.** Passwords are stored as bcrypt hashes and checked with
+`password_verify()`. An unknown username is compared against a dummy hash
+anyway, so the response time doesn't reveal which usernames exist. The session
+id is regenerated on login to defeat session fixation, the cookie is `HttpOnly`,
+`SameSite=Lax` and `Secure` over HTTPS, and an idle session expires after eight
+hours. Eight failed attempts locks that session out for five minutes.
+
+**Uploaded files are behind the login too.** This is the part that is easy to
+get wrong: a login on `index.php` does nothing if the web server still hands out
+`uploads/invoice.pdf` to anyone who guesses the name. `uploads/.htaccess`
+denies direct HTTP access to the whole folder, and `file.php` — which checks the
+session first — reads from disk and streams the file. CI fails the build if
+either half of that goes missing.
+
 **Output.** Every filename is escaped with `htmlspecialchars()` before it hits
 the page and `rawurlencode()`d in URLs, so a crafted name can't inject markup.
 
 ## Worth knowing
 
-The gallery is public: anyone with the URL can upload and view. If this is for
-anything non-public, put HTTP Basic Auth on the folder (hPanel → **Advanced →
-Password Protect Directories**) or add a login before going live.
+**Sessions are the only gate.** There are no user roles — every account can
+upload, view and delete everything. Deletion is permanent; there is no recycle
+bin and no audit trail of who removed what.
+
+**Serve the site over HTTPS.** hPanel issues a free certificate, and the session
+cookie only sets its `Secure` flag when the request arrives over HTTPS. Over
+plain HTTP the password and the session cookie both travel in clear text.
+
+**The throttle is per-session.** An attacker who discards their cookie between
+attempts is not slowed by it. It protects against someone idly guessing in a
+browser, not against a determined script — which is, again, why the password
+matters more than the throttle.

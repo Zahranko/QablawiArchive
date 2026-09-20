@@ -6,6 +6,10 @@ uploads/*
 # State file the FTP deploy action writes on the server.
 .ftp-deploy-sync-state.json
 
+# Local credential overrides. This is how you keep real passwords out of a
+# public repository — see README.md.
+config.local.php
+
 # Local noise
 .DS_Store
 Thumbs.db

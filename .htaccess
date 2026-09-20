@@ -11,6 +11,13 @@ RedirectMatch 404 /\.env
     Require all denied
 </FilesMatch>
 
+# The credential files are only ever included by other scripts, never
+# requested directly. Denying them means a server that somehow stopped
+# executing PHP would serve a 403 instead of printing the password hashes.
+<FilesMatch "^config(\.local)?\.php$">
+    Require all denied
+</FilesMatch>
+
 # No directory listings anywhere.
 Options -Indexes
 

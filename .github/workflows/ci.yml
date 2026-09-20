@@ -44,6 +44,28 @@ jobs:
             echo "::error file=uploads/.htaccess::uploads/.htaccess no longer disables the PHP engine."
             exit 1
           }
+          grep -q 'Require all denied' uploads/.htaccess || {
+            echo "::error file=uploads/.htaccess::uploads/.htaccess no longer blocks direct access — uploaded files would bypass the login."
+            exit 1
+          }
+
+      - name: Every entry point must require a login
+        # A new page that forgets require_login() is the easiest way to
+        # reopen the site by accident.
+        run: |
+          for f in index.php upload.php delete.php file.php; do
+            grep -q 'require_login()' "$f" || {
+              echo "::error file=$f::$f does not call require_login()."
+              exit 1
+            }
+          done
+
+      - name: No local credential file in the repository
+        run: |
+          if [ -f config.local.php ]; then
+            echo "::error file=config.local.php::config.local.php holds real credentials and must never be committed."
+            exit 1
+          fi
 
       - name: Require the repository guard in the root .htaccess
         # Hostinger's Git deploy puts a .git directory inside the web root.
