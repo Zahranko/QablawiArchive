@@ -85,8 +85,10 @@ if (!in_array($mime, $allowed[$ext], true)) {
     back('error', 'The file contents do not match its extension.');
 }
 
-/* Images must actually decode as images. */
-if ($ext !== 'pdf' && getimagesize($file['tmp_name']) === false) {
+/* Images must actually decode as images. Only images: getimagesize()
+   returns false for documents, so testing anything else here would
+   reject every valid PDF, spreadsheet and Word file. */
+if (in_array($ext, IMAGE_EXT, true) && getimagesize($file['tmp_name']) === false) {
     back('error', 'That image appears to be corrupt.');
 }
 

@@ -47,6 +47,13 @@ defined('UPLOAD_DIR') || define('UPLOAD_DIR', __DIR__ . '/uploads');
  */
 defined('MAX_BYTES') || define('MAX_BYTES', 10 * 1024 * 1024);
 
+/**
+ * The extensions that are genuinely images. upload.php decodes these to
+ * prove they are real; every other accepted type must not be put through
+ * that check, because getimagesize() returns false for all of them.
+ */
+defined('IMAGE_EXT') || define('IMAGE_EXT', ['jpg', 'jpeg', 'png']);
+
 defined('ALLOWED_EXT') || define('ALLOWED_EXT', [
     'pdf',
     'jpg', 'jpeg', 'png',
