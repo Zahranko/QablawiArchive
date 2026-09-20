@@ -1,0 +1,59 @@
+name: CI
+
+# Deployment is handled by Hostinger's own Git integration (hPanel →
+# Advanced → GIT), triggered by a webhook on push. This workflow is the
+# check that runs alongside it: if it fails, the code on main is broken
+# and you want to know before you look at the live site.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Lint and sanity checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Keep this matching the PHP version set in hPanel, so a syntax
+          # error caught here is the same one the server would hit.
+          php-version: '8.2'
+          extensions: fileinfo, mbstring
+          coverage: none
+
+      - name: Lint every PHP file
+        run: |
+          find . -path ./.git -prune -o -name '*.php' -print0 \
+            | xargs -0 -r -n1 php -l
+
+      - name: Require uploads/.htaccess
+        # This file is what stops an uploaded file from ever executing.
+        # If it goes missing the site is wide open, so fail loudly.
+        run: |
+          test -f uploads/.htaccess || {
+            echo "::error file=uploads/.htaccess::uploads/.htaccess is missing."
+            exit 1
+          }
+          grep -q 'engine off' uploads/.htaccess || {
+            echo "::error file=uploads/.htaccess::uploads/.htaccess no longer disables the PHP engine."
+            exit 1
+          }
+
+      - name: Require the repository guard in the root .htaccess
+        # Hostinger's Git deploy puts a .git directory inside the web root.
+        # This rule is what keeps it unreadable from the browser.
+        run: |
+          test -f .htaccess || {
+            echo "::error file=.htaccess::Root .htaccess is missing."
+            exit 1
+          }
+          grep -q '\\.git' .htaccess || {
+            echo "::error file=.htaccess::Root .htaccess no longer blocks access to .git."
+            exit 1
+          }

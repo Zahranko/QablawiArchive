@@ -1,82 +1,97 @@
 # QablawiArchive — File Vault
 
-A lightweight PHP file upload and preview gallery, deployed to Hostinger from
-GitHub.
+A lightweight PHP file upload and preview gallery, deployed to Hostinger
+straight from GitHub.
 
-- [Deploying from GitHub](#deploying-from-github) — the CI/CD setup
+- [Deploying from GitHub](#deploying-from-github) — Hostinger pulls from the repo
 - [Manual setup](#1-upload-the-files) — if you'd rather drag files in yourself
 
 ---
 
 ## Deploying from GitHub
 
-`.github/workflows/deploy.yml` runs on every push to `main`: it lints all PHP,
-refuses to continue if `uploads/.htaccess` is missing or no longer disables the
-PHP engine, then publishes over FTPS.
+Hostinger pulls the code from GitHub itself — there are no FTP credentials
+anywhere, and nothing leaves Hostinger's network. A push to `main` fires a
+webhook, Hostinger pulls, the site updates.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs alongside it as the check: it
+lints every PHP file and fails if `uploads/.htaccess` or the root `.htaccess`
+has lost its protective rule. It does not deploy.
 
 ### One-time setup
 
-**1. Get the FTP details.** hPanel → **Files → FTP Accounts**. You need the
-*FTP hostname* (something like `ftp.yourdomain.com`, or the server IP), the
-*FTP username*, and the password. Create a new FTP account here rather than
-reusing your hPanel login, so the credentials in GitHub only reach this one
-site; if they ever leak you delete that account and nothing else is affected.
+**1. Empty the target directory first.** Hostinger refuses to set up a
+repository in a folder that already has files in it. In **File Manager**,
+delete Hostinger's placeholder `public_html/index.html` (and `default.php`
+if present). If you have your own files there, move them out — this step is
+the one that trips people up.
 
-**2. Add them as GitHub secrets.** In the repo → **Settings → Secrets and
-variables → Actions → New repository secret**:
+**2. hPanel → Websites → your site → Advanced → GIT.**
 
-| Secret | Value |
+| Field | Value |
 |---|---|
-| `FTP_SERVER` | the FTP hostname |
-| `FTP_USERNAME` | the FTP account username |
-| `FTP_PASSWORD` | that account's password |
+| Repository | `https://github.com/Zahranko/QablawiArchive.git` |
+| Branch | `main` |
+| Directory | leave blank for `public_html`, or e.g. `vault` for a subfolder |
 
-Never put these in a file in the repo — secrets are the only place they belong.
+Click **Create**. The repository is public, so the HTTPS URL works with no
+authentication. If you ever make it private, switch to the SSH URL
+(`git@github.com:Zahranko/QablawiArchive.git`) and add the SSH key Hostinger
+shows you to GitHub under **Settings → Deploy keys**.
 
-**3. Set the target folder, if it isn't `public_html/`.** Same page, the
-**Variables** tab → `FTP_SERVER_DIR`, e.g. `public_html/vault/`. The trailing
-slash matters. Skip this and it deploys to `public_html/`.
+**3. Turn on automatic deployment.** The GIT page now shows your repository
+with a **webhook URL**. Copy it, then in GitHub go to **Settings → Webhooks →
+Add webhook**:
 
-**4. Push to `main`.** Watch the run under the **Actions** tab.
+- *Payload URL*: the URL you copied
+- *Content type*: `application/json`
+- *Which events*: **Just the push event**
+- *Active*: checked
 
-### What it will and won't touch
+GitHub sends a ping immediately — a green tick under **Recent Deliveries**
+means it's wired up.
 
-The action uploads only files that changed, and removes remote files that it
-previously deployed and you have since deleted from the repo. Visitor uploads
-were never deployed, so they are never in that set and are left alone —
-provided `dangerous-clean-slate` stays `false`. Don't turn it on; it would
-delete the entire remote folder before uploading, taking every uploaded file
-with it.
+**4. Set the folder permissions, once.** Deployment copies code, not
+permissions. In File Manager, right-click `uploads/` → **Permissions** → **755**.
+The app creates the folder on first upload if it's missing, but doing it now
+avoids a confusing first error.
 
-`uploads/` is gitignored except for `.htaccess`, so the security file ships but
-the uploaded content stays out of version control.
+Without the webhook you can still deploy — the GIT page has a **Deploy** button
+you press by hand. The webhook just saves you the trip.
 
-### First deploy
+### What a deploy does and doesn't touch
 
-The workflow copies code, not permissions. After the first successful run, go
-to File Manager once and confirm `uploads/` exists and is **755** — see step 2
-below. The app creates the folder on first upload if it's missing, but setting
-it yourself avoids a confusing first error.
+Hostinger runs a pull into the existing working tree, which only touches files
+Git tracks. `uploads/` is gitignored apart from `.htaccess`, so every file your
+visitors have uploaded is untracked and survives every deploy untouched.
 
-### Alternative: Hostinger's built-in Git
+The one thing to know: because the repository is cloned *into* the web root,
+`public_html/.git/` is a real directory behind your domain. The root `.htaccess`
+in this repo blocks it — `RedirectMatch 404 /\.git` — which is why CI fails the
+build if that line ever disappears. Verify it once after the first deploy by
+visiting `https://yourdomain.com/.git/config`; you want a 404, not a download.
 
-If you'd rather not keep FTP credentials in GitHub at all, hPanel →
-**Advanced → GIT** can pull straight from the repository, with a webhook URL
-you paste into GitHub (**Settings → Webhooks**) for automatic deploys. It has
-no lint step, and it deploys whatever is on the branch — but nothing leaves
-Hostinger. Either approach works; don't run both at once.
+### If you'd rather push over FTP instead
+
+The FTP-based workflow was removed in favour of the above. It lives in the Git
+history if you want it back (`git log -- .github/workflows/deploy.yml`), and it
+needs `FTP_SERVER`, `FTP_USERNAME` and `FTP_PASSWORD` as repository secrets.
+Don't run both methods against the same folder.
 
 ---
 
 ## Manual setup
 
-## 1. Upload the files
+If you'd rather not use Git deployment at all.
+
+### 1. Upload the files
 
 Put these in your domain's document root (`public_html/`, or a subfolder like
 `public_html/vault/`), keeping the structure exactly as it is:
 
 ```
 public_html/
+├── .htaccess            <-- blocks /.git and directory listings
 ├── index.php
 ├── upload.php
 ├── delete.php
@@ -89,17 +104,17 @@ dotfiles by default — turn on **Settings → Show hidden files** so you can
 confirm `uploads/.htaccess` actually arrived. If it didn't, create it there and
 paste the contents in.
 
-## 2. Create and permission the uploads folder
+### 2. Create and permission the uploads folder
 
 If `uploads/` isn't there, create it. Then right-click it → **Permissions**:
 
 - `uploads/` → **755** (`rwxr-xr-x`)
-- `index.php`, `upload.php`, `delete.php`, `uploads/.htaccess` → **644** (`rw-r--r--`)
+- `.htaccess`, `index.php`, `upload.php`, `delete.php`, `uploads/.htaccess` → **644**
 
 755 is enough on Hostinger because PHP runs as your own user. **Do not use 777** —
 it lets any other account on the server write into your folder.
 
-## 3. Check the PHP limits
+### 3. Check the PHP limits
 
 hPanel → **Advanced → PHP Configuration → PHP options**. The script caps uploads
 at 5 MB, so make sure the server allows at least that:
@@ -117,7 +132,7 @@ name sanitiser.
 To change the 5 MB cap, edit `MAX_BYTES` in `upload.php` **and** `MAX_MB` in
 `index.php` so the form and the server agree.
 
-## 4. Visit the page
+### 4. Visit the page
 
 Open `https://yourdomain.com/` (or `/vault/`). Upload a PDF or image, and it
 appears in the gallery below the form.
@@ -174,6 +189,11 @@ another site can't make your visitors post files to it.
 
 **Overwrites.** A name that's already taken gets `-2`, `-3` … appended rather
 than silently replacing the existing file.
+
+**Repository exposure.** Git deployment clones into the web root, so the root
+`.htaccess` returns 404 for anything under `/.git` — otherwise the full history
+is downloadable from the live site. It also disables directory listings and
+denies `README.md` and the dotfiles.
 
 **Output.** Every filename is escaped with `htmlspecialchars()` before it hits
 the page and `rawurlencode()`d in URLs, so a crafted name can't inject markup.

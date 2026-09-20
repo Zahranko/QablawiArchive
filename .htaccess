@@ -1,0 +1,24 @@
+# Hostinger's Git integration clones the repository *into* the web root, which
+# means public_html/.git/ is a real directory sitting behind your domain.
+# Without this, https://yourdomain.com/.git/config and the rest of the history
+# are downloadable. This is the file that prevents that.
+
+RedirectMatch 404 /\.git
+RedirectMatch 404 /\.env
+
+# Repository files that are not part of the site.
+<FilesMatch "^(README\.md|\.gitignore|\.gitattributes|composer\.(json|lock))$">
+    Require all denied
+</FilesMatch>
+
+# No directory listings anywhere.
+Options -Indexes
+
+# index.php is the entry point.
+DirectoryIndex index.php index.html
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
