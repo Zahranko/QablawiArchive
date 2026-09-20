@@ -64,6 +64,10 @@ integration needs the SSH URL and a deploy key — see below.
 
 ## Deploying from GitHub
 
+> **Not on your plan?** hPanel → **Advanced → GIT** only exists on some
+> Hostinger plans. If you don't see it, skip to [Manual setup](#manual-setup);
+> the repository still works as a backup and as version history.
+
 Hostinger pulls the code from GitHub itself — there are no FTP credentials
 anywhere, and nothing leaves Hostinger's network. A push to `main` fires a
 webhook, Hostinger pulls, the site updates.
@@ -136,12 +140,16 @@ Don't run both methods against the same folder.
 
 ## Manual setup
 
-If you'd rather not use Git deployment at all.
+For plans without Git deployment, or if you'd simply rather do it by hand.
 
 ### 1. Upload the files
 
-Put these in your domain's document root (`public_html/`, or a subfolder like
-`public_html/vault/`), keeping the structure exactly as it is:
+The quickest route is a zip. From a checkout of this repository, zip these
+eleven files **keeping their folder structure**, upload the zip through
+**Files → File Manager**, then right-click it → **Extract** into `public_html`
+and delete the zip afterwards.
+
+The structure that has to end up on the server:
 
 ```
 public_html/
@@ -160,10 +168,15 @@ public_html/
     └── .htaccess        <-- do not skip this file
 ```
 
-In hPanel: **Files → File Manager**, drag the files in. The File Manager hides
-dotfiles by default — turn on **Settings → Show hidden files** so you can
-confirm `uploads/.htaccess` actually arrived. If it didn't, create it there and
-paste the contents in.
+Do not upload `README.md`, `.github/`, `.gitignore` or `.gitattributes` — they
+are development files and have no business on a web server.
+
+**Then check the dotfiles arrived.** File Manager hides them by default: turn on
+**Settings → Show hidden files**. You should see `.htaccess` in `public_html`
+and another inside `uploads/`. If either is missing, create it there and paste
+the contents in from this repository. The one in `uploads/` is what stops
+uploaded files being fetched directly, straight past the login — without it the
+login achieves nothing.
 
 ### 2. Create and permission the uploads folder
 
@@ -197,6 +210,19 @@ To change the 5 MB cap, edit `MAX_BYTES` in `upload.php` **and** `MAX_MB` in
 
 Open `https://yourdomain.com/` (or `/vault/`). Upload a PDF or image, and it
 appears in the gallery below the form.
+
+### 5. Confirm the uploads folder really is sealed
+
+With a file uploaded, open `https://yourdomain.com/uploads/<that-file-name>`
+directly. You want **403 Forbidden**. If the file downloads, the `.htaccess`
+inside `uploads/` did not make it onto the server, and every uploaded file is
+readable by anyone who guesses its name.
+
+### Updating later
+
+Re-upload just the files you changed, overwriting in place. Nothing in
+`uploads/` is ever touched by an update, and `config.local.php` — if you made
+one — is not in the zip, so your credentials survive.
 
 ---
 
