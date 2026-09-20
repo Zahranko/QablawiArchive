@@ -1,0 +1,9 @@
+# This repo deploys straight onto a Linux web server, so everything is stored
+# and checked out with LF endings regardless of the machine committing.
+# A CRLF .htaccess in particular can confuse some server configurations.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary

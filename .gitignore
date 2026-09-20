@@ -1,0 +1,14 @@
+# Uploaded files belong to the live server, never to the repository.
+# The folder itself is tracked only through its .htaccess, which must ship.
+uploads/*
+!uploads/.htaccess
+
+# State file the FTP deploy action writes on the server.
+.ftp-deploy-sync-state.json
+
+# Local noise
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/

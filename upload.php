@@ -1,0 +1,136 @@
+<?php
+declare(strict_types=1);
+session_start();
+
+/* ---------------------------------------------------------------
+   upload.php — receives the form, validates, stores, redirects back
+   --------------------------------------------------------------- */
+
+const UPLOAD_DIR   = __DIR__ . '/uploads';
+const MAX_BYTES    = 5 * 1024 * 1024;          // 5 MB
+const ALLOWED_EXT  = ['pdf', 'jpg', 'jpeg', 'png'];
+const ALLOWED_MIME = [
+    'pdf'  => ['application/pdf'],
+    'jpg'  => ['image/jpeg'],
+    'jpeg' => ['image/jpeg'],
+    'png'  => ['image/png'],
+];
+
+/** Store a flash message and bounce back to the gallery. */
+function back(string $type, string $message)
+{
+    $_SESSION['flash'] = ['type' => $type, 'message' => $message];
+    header('Location: index.php', true, 303);
+    exit;
+}
+
+/**
+ * Turn any user-supplied string into a safe, traversal-proof file stem.
+ * Keeps letters/digits/space/dash/underscore only, so "../../etc/passwd"
+ * collapses to "etcpasswd" and can never escape uploads/.
+ */
+function safe_stem(string $raw): string
+{
+    $stem = basename(trim($raw));                       // strip any path part
+    $stem = preg_replace('/[^\p{L}\p{N} _-]+/u', '', $stem) ?? '';
+    $stem = preg_replace('/[\s_]+/u', '-', $stem) ?? ''; // spaces -> dashes
+    $stem = trim($stem, "-. \t\n\r\0\x0B");
+    $stem = mb_substr($stem, 0, 60);
+    return $stem !== '' ? $stem : 'file';
+}
+
+/* ---------- 1. Request sanity ---------- */
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    back('error', 'Invalid request method.');
+}
+
+if (
+    empty($_POST['csrf_token']) || empty($_SESSION['csrf_token']) ||
+    !hash_equals($_SESSION['csrf_token'], (string) $_POST['csrf_token'])
+) {
+    back('error', 'Security token expired. Please try again.');
+}
+
+/* A POST larger than post_max_size arrives with empty $_POST and $_FILES. */
+if (empty($_FILES['upload_file'])) {
+    back('error', 'The file is too large for this server to accept.');
+}
+
+$file = $_FILES['upload_file'];
+
+/* ---------- 2. PHP-level upload errors ---------- */
+
+switch ($file['error']) {
+    case UPLOAD_ERR_OK:
+        break;
+    case UPLOAD_ERR_NO_FILE:
+        back('error', 'Please choose a file to upload.');
+    case UPLOAD_ERR_INI_SIZE:
+    case UPLOAD_ERR_FORM_SIZE:
+        back('error', 'That file exceeds the maximum allowed size.');
+    default:
+        back('error', 'Upload failed. Please try again.');
+}
+
+/* ---------- 3. Size ---------- */
+
+if ($file['size'] <= 0) {
+    back('error', 'The selected file is empty.');
+}
+if ($file['size'] > MAX_BYTES) {
+    back('error', 'Maximum file size is ' . (MAX_BYTES / 1024 / 1024) . ' MB.');
+}
+
+/* ---------- 4. Extension whitelist ---------- */
+
+$ext = strtolower(pathinfo((string) $file['name'], PATHINFO_EXTENSION));
+if (!in_array($ext, ALLOWED_EXT, true)) {
+    back('error', 'Only PDF, JPG, JPEG and PNG files are allowed.');
+}
+
+/* ---------- 5. Real content type, not just the extension ---------- */
+
+if (!is_uploaded_file($file['tmp_name'])) {
+    back('error', 'Upload failed. Please try again.');
+}
+
+$finfo = new finfo(FILEINFO_MIME_TYPE);
+$mime  = (string) $finfo->file($file['tmp_name']);
+
+if (!in_array($mime, ALLOWED_MIME[$ext], true)) {
+    back('error', 'The file contents do not match its extension.');
+}
+
+/* Images must actually decode as images. */
+if ($ext !== 'pdf' && getimagesize($file['tmp_name']) === false) {
+    back('error', 'That image appears to be corrupt.');
+}
+
+/* ---------- 6. Build a unique, safe destination ---------- */
+
+if (!is_dir(UPLOAD_DIR) && !mkdir(UPLOAD_DIR, 0755, true) && !is_dir(UPLOAD_DIR)) {
+    back('error', 'Server storage is unavailable.');
+}
+if (!is_writable(UPLOAD_DIR)) {
+    back('error', 'The uploads folder is not writable.');
+}
+
+$stem     = safe_stem((string) ($_POST['custom_name'] ?? ''));
+$filename = $stem . '.' . $ext;
+$target   = UPLOAD_DIR . '/' . $filename;
+
+/* Never silently overwrite: append -2, -3, ... on collision. */
+for ($i = 2; file_exists($target) && $i < 1000; $i++) {
+    $filename = $stem . '-' . $i . '.' . $ext;
+    $target   = UPLOAD_DIR . '/' . $filename;
+}
+
+/* ---------- 7. Store ---------- */
+
+if (!move_uploaded_file($file['tmp_name'], $target)) {
+    back('error', 'Could not save the file. Check folder permissions.');
+}
+chmod($target, 0644);
+
+back('success', '"' . $filename . '" uploaded successfully.');

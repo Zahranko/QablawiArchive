@@ -1,0 +1,23 @@
+# Nothing in this folder may ever be executed as code.
+# A file that slips past validation is then inert: it can only be served.
+
+php_flag engine off
+
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+
+# Strip any handler a server might otherwise attach to these extensions.
+<FilesMatch "\.(php|phps|php3|php4|php5|php7|php8|phtml|pht|cgi|pl|py|sh|htaccess)$">
+    Require all denied
+</FilesMatch>
+
+RemoveHandler .php .phps .phtml .pht .php3 .php4 .php5 .php7 .php8
+RemoveType .php .phps .phtml .pht
+
+# Serve, never run.
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+</IfModule>
+
+Options -ExecCGI -Indexes
