@@ -67,7 +67,8 @@ if ($file['size'] > MAX_BYTES) {
 
 $ext = strtolower(pathinfo((string) $file['name'], PATHINFO_EXTENSION));
 if (!in_array($ext, ALLOWED_EXT, true)) {
-    back('error', 'Only PDF, JPG, JPEG and PNG files are allowed.');
+    back('error', 'That file type is not accepted. Allowed: '
+        . strtoupper(implode(', ', ALLOWED_EXT)) . '.');
 }
 
 /* ---------- 5. Real content type, not just the extension ---------- */

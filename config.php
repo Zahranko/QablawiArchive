@@ -40,15 +40,91 @@ defined('LOCKOUT_SECONDS') || define('LOCKOUT_SECONDS', 300);
 
 defined('UPLOAD_DIR') || define('UPLOAD_DIR', __DIR__ . '/uploads');
 
-/** Largest accepted upload, in bytes. */
-defined('MAX_BYTES') || define('MAX_BYTES', 5 * 1024 * 1024);
+/**
+ * Largest accepted upload, in bytes. Office documents run larger than
+ * images, so this is 10 MB. Whatever you set here, the server's own
+ * upload_max_filesize and post_max_size must be at least as large.
+ */
+defined('MAX_BYTES') || define('MAX_BYTES', 10 * 1024 * 1024);
 
-defined('ALLOWED_EXT') || define('ALLOWED_EXT', ['pdf', 'jpg', 'jpeg', 'png']);
+defined('ALLOWED_EXT') || define('ALLOWED_EXT', [
+    'pdf',
+    'jpg', 'jpeg', 'png',
+    'doc', 'docx',
+    'xls', 'xlsx',
+    'ppt', 'pptx',
+    'txt', 'csv',
+]);
 
-/** Real content types each extension is allowed to have. */
+/**
+ * Real content types each extension is allowed to have, as finfo reports
+ * them. The lists are deliberately tolerant: libmagic identifies the
+ * OOXML formats (docx/xlsx/pptx) as plain zip archives on many builds,
+ * and the legacy binary formats as generic OLE compound documents, so a
+ * strict single-value check would reject perfectly good files.
+ *
+ * The looseness is safe because nothing here is ever executed or
+ * extracted on the server — file.php serves these bytes with a fixed
+ * Content-Type and X-Content-Type-Options: nosniff, and uploads/.htaccess
+ * blocks direct access to the folder entirely.
+ */
 defined('ALLOWED_MIME') || define('ALLOWED_MIME', [
     'pdf'  => ['application/pdf'],
     'jpg'  => ['image/jpeg'],
     'jpeg' => ['image/jpeg'],
     'png'  => ['image/png'],
+
+    'txt'  => ['text/plain'],
+    'csv'  => ['text/csv', 'text/plain', 'application/csv'],
+
+    'docx' => [
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/zip',
+    ],
+    'xlsx' => [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/zip',
+    ],
+    'pptx' => [
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/zip',
+    ],
+
+    'doc'  => [
+        'application/msword',
+        'application/vnd.ms-office',
+        'application/x-ole-storage',
+        'application/CDFV2',
+        'application/CDFV2-corrupt',
+    ],
+    'xls'  => [
+        'application/vnd.ms-excel',
+        'application/vnd.ms-office',
+        'application/x-ole-storage',
+        'application/CDFV2',
+        'application/CDFV2-corrupt',
+    ],
+    'ppt'  => [
+        'application/vnd.ms-powerpoint',
+        'application/vnd.ms-office',
+        'application/x-ole-storage',
+        'application/CDFV2',
+        'application/CDFV2-corrupt',
+    ],
+]);
+
+/** The Content-Type file.php serves each extension with. */
+defined('SERVE_TYPES') || define('SERVE_TYPES', [
+    'pdf'  => 'application/pdf',
+    'jpg'  => 'image/jpeg',
+    'jpeg' => 'image/jpeg',
+    'png'  => 'image/png',
+    'txt'  => 'text/plain; charset=utf-8',
+    'csv'  => 'text/csv; charset=utf-8',
+    'doc'  => 'application/msword',
+    'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls'  => 'application/vnd.ms-excel',
+    'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'ppt'  => 'application/vnd.ms-powerpoint',
+    'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ]);

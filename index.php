@@ -12,6 +12,40 @@ $q = mb_substr(trim((string) ($_GET['q'] ?? '')), 0, 60);
 
 $max_mb = (int) round(MAX_BYTES / 1048576);
 
+/**
+ * How a file can be shown.
+ *
+ *   image  the browser renders it natively
+ *   pdf    the browser renders it natively
+ *   text   plain text, read as-is
+ *   sheet  parsed into a table in the browser (csv, xls, xlsx)
+ *   word   converted to HTML in the browser (docx)
+ *   none   no renderer exists — download to open
+ *
+ * See assets/preview.js for why the last group is what it is.
+ */
+function file_kind(string $ext): string
+{
+    switch ($ext) {
+        case 'jpg':
+        case 'jpeg':
+        case 'png':
+            return 'image';
+        case 'pdf':
+            return 'pdf';
+        case 'txt':
+            return 'text';
+        case 'csv':
+        case 'xls':
+        case 'xlsx':
+            return 'sheet';
+        case 'docx':
+            return 'word';
+        default:
+            return 'none';
+    }
+}
+
 function human_size(int $bytes): string
 {
     if ($bytes < 1024) {
@@ -24,9 +58,8 @@ function human_size(int $bytes): string
 }
 
 /**
- * Read the gallery: only files whose extension we know how to render,
- * newest first. scandir() returns bare names, never paths, so nothing
- * here can point outside uploads/.
+ * Read the gallery, newest first. scandir() returns bare names, never
+ * paths, so nothing here can point outside uploads/.
  */
 function gallery_files(): array
 {
@@ -49,12 +82,12 @@ function gallery_files(): array
             continue;
         }
         $files[] = [
-            'name'     => $name,
-            'ext'      => $ext,
-            'is_image' => $ext !== 'pdf',
-            'size'     => human_size((int) filesize($path)),
-            'date'     => date('j M Y, H:i', (int) filemtime($path)),
-            'mtime'    => (int) filemtime($path),
+            'name'  => $name,
+            'ext'   => $ext,
+            'kind'  => file_kind($ext),
+            'size'  => human_size((int) filesize($path)),
+            'date'  => date('j M Y, H:i', (int) filemtime($path)),
+            'mtime' => (int) filemtime($path),
         ];
     }
 
@@ -81,6 +114,8 @@ $files = array_values(array_filter(
         return match_name($file, $q);
     }
 ));
+
+$accept = '.' . implode(',.', ALLOWED_EXT);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -97,7 +132,7 @@ $files = array_values(array_filter(
   <header class="topbar">
     <div class="titles">
       <h1>File Vault</h1>
-      <p>Upload a PDF or image, give it a name, and preview it right here.</p>
+      <p>Upload a document or image, give it a name, and preview it right here.</p>
     </div>
 
     <div class="session">
@@ -124,7 +159,7 @@ $files = array_values(array_filter(
       <div class="field">
         <label for="upload_file">Choose a file</label>
         <input type="file" id="upload_file" name="upload_file"
-               accept=".pdf,.jpg,.jpeg,.png" required>
+               accept="<?= e($accept) ?>" required>
       </div>
 
       <div class="field">
@@ -139,8 +174,8 @@ $files = array_values(array_filter(
     </div>
 
     <p class="hint">
-      PDF, JPG, JPEG or PNG &middot; up to <?= $max_mb ?> MB.
-      The original extension is kept automatically.
+      PDF, Word, Excel, PowerPoint, images, TXT and CSV &middot;
+      up to <?= $max_mb ?> MB. The original extension is kept automatically.
     </p>
   </form>
 
@@ -175,16 +210,48 @@ $files = array_values(array_filter(
 <?php else: ?>
   <div class="grid">
 <?php foreach ($files as $file): ?>
-<?php   $url = 'file.php?f=' . rawurlencode($file['name']); ?>
+<?php
+    $url         = 'file.php?f=' . rawurlencode($file['name']);
+    $previewable = $file['kind'] !== 'none';
+?>
     <figure class="card tile">
+
+<?php   if ($file['kind'] === 'image'): ?>
+      <button type="button" class="frame" data-preview
+              data-name="<?= e($file['name']) ?>"
+              data-kind="<?= e($file['kind']) ?>"
+              data-url="<?= e($url) ?>"
+              aria-label="Preview <?= e($file['name']) ?>">
+        <img src="<?= e($url) ?>" alt="" loading="lazy">
+      </button>
+
+<?php   elseif ($file['kind'] === 'pdf'): ?>
       <div class="frame">
-<?php   if ($file['is_image']): ?>
-        <img src="<?= e($url) ?>" alt="<?= e($file['name']) ?>" loading="lazy">
-<?php   else: ?>
         <iframe src="<?= e($url) ?>#toolbar=0&amp;navpanes=0&amp;view=FitH"
                 title="<?= e($file['name']) ?>" loading="lazy"></iframe>
-<?php   endif; ?>
       </div>
+
+<?php   elseif ($previewable): ?>
+      <button type="button" class="frame icon" data-preview
+              data-name="<?= e($file['name']) ?>"
+              data-kind="<?= e($file['kind']) ?>"
+              data-url="<?= e($url) ?>"
+              aria-label="Preview <?= e($file['name']) ?>">
+        <span class="doc-icon kind-<?= e($file['kind']) ?>">
+          <span class="ext"><?= e($file['ext']) ?></span>
+        </span>
+        <span class="frame-hint">Click to preview</span>
+      </button>
+
+<?php   else: ?>
+      <div class="frame icon">
+        <span class="doc-icon kind-none">
+          <span class="ext"><?= e($file['ext']) ?></span>
+        </span>
+        <span class="frame-hint">No preview &mdash; download to open</span>
+      </div>
+<?php   endif; ?>
+
       <figcaption class="meta">
         <div class="text">
           <a class="name" href="<?= e($url) ?>" target="_blank" rel="noopener">
@@ -196,19 +263,32 @@ $files = array_values(array_filter(
           </div>
         </div>
 
-        <form class="delete" action="delete.php" method="post"
-              onsubmit="return confirm(<?= e((string) json_encode('Delete "' . $file['name'] . '"? This cannot be undone.', JSON_INVALID_UTF8_SUBSTITUTE)) ?>);">
-          <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-          <input type="hidden" name="filename" value="<?= e($file['name']) ?>">
-          <input type="hidden" name="q" value="<?= e($q) ?>">
-          <button type="submit" title="Delete <?= e($file['name']) ?>"
-                  aria-label="Delete <?= e($file['name']) ?>">
+        <div class="actions">
+          <a class="act" href="<?= e($url) ?>&amp;dl=1" download
+             title="Download <?= e($file['name']) ?>"
+             aria-label="Download <?= e($file['name']) ?>">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" aria-hidden="true">
-              <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+              <path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>
             </svg>
-          </button>
-        </form>
+          </a>
+
+          <form class="delete" action="delete.php" method="post"
+                onsubmit="return confirm(<?= e((string) json_encode('Delete "' . $file['name'] . '"? This cannot be undone.', JSON_INVALID_UTF8_SUBSTITUTE)) ?>);">
+            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="filename" value="<?= e($file['name']) ?>">
+            <input type="hidden" name="q" value="<?= e($q) ?>">
+            <button type="submit" class="act danger"
+                    title="Delete <?= e($file['name']) ?>"
+                    aria-label="Delete <?= e($file['name']) ?>">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>
+              </svg>
+            </button>
+          </form>
+        </div>
       </figcaption>
     </figure>
 <?php endforeach; ?>
@@ -216,5 +296,30 @@ $files = array_values(array_filter(
 <?php endif; ?>
 
 </div>
+
+<!-- ============ Preview dialog ============ -->
+<dialog id="preview" class="preview">
+  <div class="preview-head">
+    <strong id="preview-title"></strong>
+    <a id="preview-download" class="act" href="#" download
+       title="Download" aria-label="Download">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>
+      </svg>
+    </a>
+    <button type="button" class="act" id="preview-close"
+            title="Close" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 6l12 12M18 6L6 18"/>
+      </svg>
+    </button>
+  </div>
+  <div class="preview-body" id="preview-body"></div>
+</dialog>
+
+<script src="assets/preview.js" defer></script>
 </body>
 </html>

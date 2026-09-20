@@ -8,6 +8,9 @@ require_once __DIR__ . '/auth.php';
  * uploads/.htaccess denies direct web access to that folder, so this script
  * is the only way in. Without it, putting a login on index.php would achieve
  * nothing: anyone who guessed uploads/invoice.pdf would still get the file.
+ *
+ *   file.php?f=name.pdf          view it
+ *   file.php?f=name.pdf&dl=1     download it
  */
 
 require_login();
@@ -33,23 +36,27 @@ if ($base === false || $path === false || !is_file($path) || dirname($path) !== 
     exit('Not found.');
 }
 
-$types = [
-    'pdf'  => 'application/pdf',
-    'jpg'  => 'image/jpeg',
-    'jpeg' => 'image/jpeg',
-    'png'  => 'image/png',
-];
+$types    = SERVE_TYPES;
+$size     = (int) filesize($path);
+$mtime    = (int) filemtime($path);
+$etag     = '"' . md5($name . $size . $mtime) . '"';
+$download = isset($_GET['dl']);
 
-$size  = (int) filesize($path);
-$mtime = (int) filemtime($path);
-$etag  = '"' . md5($name . $size . $mtime) . '"';
+/* A filename in a header has to survive quoting. Give a plain ASCII
+   fallback plus the RFC 5987 form that carries the real name. */
+$ascii = preg_replace('/[^\x20-\x7E]/', '_', $name) ?? 'file';
+$ascii = str_replace(['"', '\\'], '', $ascii);
 
-/* Let the browser reuse what it already has, but only in a private cache —
-   never a shared proxy, since these files are behind a login. */
-header('Content-Type: ' . $types[$ext]);
+header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
 header('Content-Length: ' . $size);
-header('Content-Disposition: inline; filename="' . str_replace('"', '', $name) . '"');
+header(sprintf(
+    'Content-Disposition: %s; filename="%s"; filename*=UTF-8\'\'%s',
+    $download ? 'attachment' : 'inline',
+    $ascii,
+    rawurlencode($name)
+));
 header('X-Content-Type-Options: nosniff');
+/* Private, never a shared proxy: these files sit behind a login. */
 header('Cache-Control: private, max-age=600, must-revalidate');
 header('ETag: ' . $etag);
 header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
@@ -62,7 +69,7 @@ if ($sent === $etag || ($since && $since >= $mtime)) {
     exit;
 }
 
-/* Clear any buffering so a large PDF streams instead of filling memory. */
+/* Clear any buffering so a large file streams instead of filling memory. */
 while (ob_get_level() > 0) {
     ob_end_clean();
 }

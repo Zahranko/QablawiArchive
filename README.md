@@ -145,7 +145,7 @@ For plans without Git deployment, or if you'd simply rather do it by hand.
 ### 1. Upload the files
 
 The quickest route is a zip. From a checkout of this repository, zip these
-eleven files **keeping their folder structure**, upload the zip through
+twelve files **keeping their folder structure**, upload the zip through
 **Files → File Manager**, then right-click it → **Extract** into `public_html`
 and delete the zip afterwards.
 
@@ -163,7 +163,8 @@ public_html/
 ├── delete.php
 ├── file.php             <-- serves uploads to signed-in users only
 ├── assets/
-│   └── app.css
+│   ├── app.css
+│   └── preview.js
 └── uploads/
     └── .htaccess        <-- do not skip this file
 ```
@@ -191,20 +192,20 @@ it lets any other account on the server write into your folder.
 ### 3. Check the PHP limits
 
 hPanel → **Advanced → PHP Configuration → PHP options**. The script caps uploads
-at 5 MB, so make sure the server allows at least that:
+at 10 MB, so make sure the server allows at least that:
 
 | Setting            | Value    |
 |--------------------|----------|
-| `upload_max_filesize` | 8M or more |
-| `post_max_size`       | 8M or more |
+| `upload_max_filesize` | 12M or more |
+| `post_max_size`       | 12M or more |
 | `file_uploads`        | On       |
 
 PHP 7.4+ is required; 8.1 or newer is recommended. `fileinfo` is enabled on
 Hostinger by default — the MIME check needs it, and `mbstring` is needed for the
 name sanitiser.
 
-To change the 5 MB cap, edit `MAX_BYTES` in `upload.php` **and** `MAX_MB` in
-`index.php` so the form and the server agree.
+To change the 10 MB cap, edit `MAX_BYTES` in `config.php` — the form, the
+server-side check and the hint text all read from it.
 
 ### 4. Visit the page
 
@@ -226,13 +227,63 @@ one — is not in the zip, so your credentials survive.
 
 ---
 
-## Search and delete
+## Supported formats and previews
+
+| Format | Stored | Preview |
+|---|---|---|
+| JPG, JPEG, PNG | yes | in the tile, and full size in the viewer |
+| PDF | yes | in the tile, and full size in the viewer |
+| TXT | yes | in the viewer |
+| CSV | yes | in the viewer, as a table |
+| XLSX, XLS | yes | in the viewer, as a table |
+| DOCX | yes | in the viewer, converted to HTML |
+| DOC, PPT, PPTX | yes | **none** — download to open |
+
+### Why those three have no preview
+
+Browsers render images and PDFs. Nothing else. Everything below that line has
+to be parsed by something, and there are only three places that can happen:
+
+1. **A hosted viewer** (Microsoft Office Online, Google Docs). These render
+   every Office format perfectly — but they fetch the document from a public
+   URL using their own servers. Files here sit behind a login, so those viewers
+   cannot reach them, and making them reachable would mean handing out
+   unauthenticated URLs and copying your documents to a third party. That
+   defeats the point of the login.
+2. **Conversion on the server** with LibreOffice. Shared hosting doesn't have
+   it, and Hostinger won't install it.
+3. **Parsing in the browser**, which is what this app does: `mammoth.js` for
+   DOCX and `SheetJS` for XLSX/XLS/CSV, both loaded from a CDN only when you
+   actually open a preview.
+
+There is no comparable browser-side renderer for PowerPoint, and none at all
+for the pre-2007 binary `.doc` and `.ppt` formats. Those tiles say so and offer
+a download rather than showing something broken.
+
+**Saving a `.doc` as `.docx` in Word makes it previewable**, which is usually
+the easiest fix.
+
+### How previews are kept safe
+
+A converted document is injected into a `<iframe sandbox>` with no
+`allow-scripts` and no `allow-same-origin`. Anything a crafted document smuggles
+past the converter is inert inside it: no script runs, and it cannot touch the
+page or the session. Plain text is inserted with `textContent`, never as markup.
+
+---
+
+## Search, download and delete
 
 **Search** is a plain GET form — typing a name and pressing Search reloads the
 page as `index.php?q=invoice` and shows only files whose name contains that
 text, case-insensitively. It needs no JavaScript, the URL is shareable, and the
 count reads "3 of 12 files" while a search is active. **Clear** returns to the
 full list.
+
+**Download** is the arrow icon on each tile, and it is also in the preview
+viewer's header. It points at `file.php?f=…&dl=1`, which sends
+`Content-Disposition: attachment` so the browser saves the file instead of
+trying to display it. Like everything else, it requires a session.
 
 **Delete** is the trash icon on each tile. It posts to `delete.php` rather than
 using a link, because a GET request that destroys data can be triggered by a
@@ -260,6 +311,14 @@ against the whitelist, then re-attached by the script.
 reads the file's real MIME type with `finfo` and requires it to match the
 extension, and runs `getimagesize()` on anything claiming to be an image. A
 `.jpg` that is actually PHP source is rejected.
+
+The Office formats need a looser check than the rest: `.docx`, `.xlsx` and
+`.pptx` are zip archives, and libmagic reports many of them as
+`application/zip`, while the legacy `.doc`/`.xls`/`.ppt` come back as generic
+OLE compound documents. Both are accepted. That means a plain zip renamed to
+`.docx` would pass — which is harmless here, because nothing on the server ever
+executes or extracts it, `file.php` serves it with a fixed `Content-Type` and
+`nosniff`, and the folder is unreachable over HTTP anyway.
 
 **Execution.** Even if something did slip through, `uploads/.htaccess` turns off
 the PHP engine and removes every script handler for that folder, so an uploaded
